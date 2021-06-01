@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-from asyncio.tasks import wait_for
 import os
 import re
 from discord.message import Message
@@ -257,16 +256,6 @@ class QuizClient(discord.Client):
                 await player.send("-" * 80)
 
         await self.channel.send("Quiz vorbei!")
-
-        # Ablauf:
-        # - post question to quiz-channel and all private player channels
-        # - players post answers in private bot-channel
-        # - answer multiple choice with a, b, c, d emojis
-        # - bot reacts with green checkmark after everyone answered, then quizmaster can close with checkmark
-        # - print answer with player emojis
-        # - set winners by choosing the right emoji
-        #
-        # - track the points and make graphs
 
 
     async def show_scores(self, message):
