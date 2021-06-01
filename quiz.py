@@ -10,7 +10,6 @@ class Quiz(object):
                 question = tuple(string.strip() for string in tuple(line.split("    ")))
                 self.questions.append(question)
 
-
     def __iter__(self):
         def questions_gen(questions):
             current = 0

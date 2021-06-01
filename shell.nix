@@ -28,6 +28,7 @@ in
 
 mkShell {
   buildInputs = [
+    jetbrains.pycharm-professional
     myPython
     nodePackages.pyright # LSP
     pipenv # Doom

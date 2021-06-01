@@ -1,4 +1,5 @@
 python-dotenv
 rich
+matplotlib
 discord.py
 pynacl

@@ -13,6 +13,7 @@ load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 GUILD = os.getenv("DISCORD_GUILD")  # Zocken mit Heidi
 
+
 class QuizClient(discord.Client):
 
     def __init__(self):
@@ -40,10 +41,9 @@ class QuizClient(discord.Client):
         self.matchers["scores$"] = self.show_scores
         self.matchers["players$"] = self.show_players
 
-        ### Voicelines
+        # Voicelines
 
-
-    ### Helpers ------------------------------------------------------------------------------------
+    # Helpers ------------------------------------------------------------------------------------
 
     def _help_text(self):
         """
@@ -73,7 +73,7 @@ class QuizClient(discord.Client):
         """
         return re.match(self.prefix_regex + matcher, message.content, re.IGNORECASE)
 
-    ### Events -------------------------------------------------------------------------------------
+    # Events -------------------------------------------------------------------------------------
 
     async def on_ready(self):
         print(f"{self.user} (id: {self.user.id}) has connected to Discord!")
@@ -92,14 +92,13 @@ class QuizClient(discord.Client):
                 await self.matchers[matcher](message)
                 break
 
-    ### Commands -----------------------------------------------------------------------------------
+    # Commands -----------------------------------------------------------------------------------
 
     async def help(self, message):
         """
         Quiz, hilfe - Hilfetext anzeigen
         """
         await message.channel.send(self._help_text())
-
 
     async def reset_quiz(self, message):
         """
@@ -115,13 +114,11 @@ class QuizClient(discord.Client):
 
         await message.channel.send("Finished.")
 
-
     def is_init(self):
         return not (self.quiz == None or
                     self.channel == None or
                     self.quizmaster == None or
                     self.players == dict())
-
 
     async def init_quiz(self, message):
         """
@@ -152,7 +149,8 @@ class QuizClient(discord.Client):
 
         # Set self.players
         await self.channel.send("Determining players:")
-        react_message = await self.channel.send("Hier mit individuellem Emoji reagieren, am Ende mit dem Haken bestätigen!")
+        react_message = await self.channel.send(
+            "Hier mit individuellem Emoji reagieren, am Ende mit dem Haken bestätigen!")
         await react_message.add_reaction("✅")
 
         def check_confirm_players(reaction, user):
@@ -160,7 +158,7 @@ class QuizClient(discord.Client):
 
         await self.wait_for("reaction_add", check=check_confirm_players)
         react_message = discord.utils.get(client.cached_messages, id=react_message.id)
-        assert isinstance(react_message, Message), "This should be a Message!" # silence pyright
+        assert isinstance(react_message, Message), "This should be a Message!"  # silence pyright
 
         # Get players from emojis
         for reaction in react_message.reactions:
@@ -171,7 +169,7 @@ class QuizClient(discord.Client):
                 if user == self.quizmaster:
                     continue
 
-                self.players[reaction.emoji] = user # TODO: key value which order?
+                self.players[reaction.emoji] = user  # TODO: key value which order?
 
         # Send starting message
         await self.channel.send("Quiz will start in channel \"" + self.channel.name + "\"")
@@ -179,7 +177,6 @@ class QuizClient(discord.Client):
         for emoji, player in self.players.items():
             await self.channel.send(str(emoji) + ": " + str(player.display_name))
         await self.channel.send("-" * 80)
-
 
     async def run_quiz(self, message):
         """
@@ -197,10 +194,10 @@ class QuizClient(discord.Client):
 
             # post question to players
             for player in self.players.values():
-                await player.send("Frage: **" + question + "**")
+                await player.send("**Frage:** " + question)
 
             # post question to channel for confirmation
-            await self.channel.send("Frage: **" + question + "**")
+            await self.channel.send("**Frage:** " + question)
 
             # wait for answers from all players
             for player in self.players.values():
@@ -222,9 +219,10 @@ class QuizClient(discord.Client):
             # Antworten
             await self.channel.send("**Antworten:**")
             for emoji, player in self.players.items():
-                await self.channel.send(str(emoji) + ": " + str((await player.dm_channel.history(limit=1).flatten())[0].content))
+                await self.channel.send(
+                    str(emoji) + ": " + str((await player.dm_channel.history(limit=1).flatten())[0].content))
 
-            amsg = await self.channel.send("Korrekte Antwort: " + answer)
+            amsg = await self.channel.send("**Korrekte Antwort:** " + answer)
             await amsg.add_reaction("✅")
             for emoji, player in self.players.items():
                 await amsg.add_reaction(emoji)
@@ -235,7 +233,7 @@ class QuizClient(discord.Client):
 
             await self.wait_for("reaction_add", check=check_confirm_points)
             amsg = discord.utils.get(client.cached_messages, id=amsg.id)
-            assert isinstance(amsg, Message), "This should be a Message!" # silence pyright
+            assert isinstance(amsg, Message), "This should be a Message!"  # silence pyright
 
             turn_scores = list()
             for reaction in amsg.reactions:
@@ -257,7 +255,6 @@ class QuizClient(discord.Client):
 
         await self.channel.send("Quiz vorbei!")
 
-
     async def show_scores(self, message):
         """
         Quiz, scores - Zeigt den aktuellen Punktestand
@@ -270,7 +267,7 @@ class QuizClient(discord.Client):
             await self.channel.send("Kein QuizMaster keine Punkte!")
             return
 
-        # scores = [[A, B], [A], [B, C], ...]
+        # scores: [[A, B], [A], [B, C], ...]
         flat_scores = [player for round in self.scores for player in round]
         score_dict = dict()
         for emoji, _ in self.players.items():
@@ -279,7 +276,6 @@ class QuizClient(discord.Client):
         await self.channel.send("Punktestand:")
         for emoji, score in sorted(score_dict.items(), key=lambda item: item[1]):
             await self.channel.send(str(emoji) + ": " + str(score) + " Punkte")
-
 
     async def show_players(self, message):
         """
@@ -296,6 +292,7 @@ class QuizClient(discord.Client):
         await self.channel.send("Players:")
         for emoji, player in self.players.items():
             await self.channel.send(str(emoji) + ": " + str(player.display_name))
+
 
 client = QuizClient()
 client.run(TOKEN)
