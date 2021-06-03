@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-
+import asyncio
 import os
+import random
 import re
-from discord.message import Message
-from dotenv import load_dotenv
 
 import discord
+from discord.message import Message
+from dotenv import load_dotenv
 
 from quiz import Quiz
 
@@ -33,15 +34,33 @@ class QuizClient(discord.Client):
         self.triggers = {}  # automatic actions
         # Example: self.triggers[lambda m: "jeremy" in m.author.nick.lower()] = self.autoreact_to_jeremy
 
-        self.matchers = {}  # react to messages
-        self.matchers["hilfe$"] = self.help
-        self.matchers["init: .*"] = self.init_quiz
-        self.matchers["start$"] = self.run_quiz
-        self.matchers["reset$"] = self.reset_quiz
-        self.matchers["scores$"] = self.show_scores
-        self.matchers["players$"] = self.show_players
+        self.matchers = {"hilfe$": self.help,
+                         "init: .*": self.init_quiz,
+                         "start$": self.run_quiz,
+                         "reset$": self.reset_quiz,
+                         "scores$": self.show_scores,
+                         "players$": self.show_players}
 
         # Voicelines
+
+    # Events -------------------------------------------------------------------------------------
+
+    async def on_ready(self):
+        print(f"{self.user} (id: {self.user.id}) has connected to Discord!")
+
+    async def on_message(self, message):
+        if message.author == client.user:
+            return
+
+        for trigger in self.triggers:
+            if trigger(message):
+                await self.triggers[trigger](message)
+                break
+
+        for matcher in self.matchers:
+            if self._match(matcher, message):
+                await self.matchers[matcher](message)
+                break
 
     # Helpers ------------------------------------------------------------------------------------
 
@@ -73,24 +92,129 @@ class QuizClient(discord.Client):
         """
         return re.match(self.prefix_regex + matcher, message.content, re.IGNORECASE)
 
-    # Events -------------------------------------------------------------------------------------
+    def _reset(self):
+        """
+        Set the saved state to None
+        """
+        self.quiz = None
+        self.channel = None
+        self.quizmaster = None
+        self.players = dict()
+        self.scores = list()
 
-    async def on_ready(self):
-        print(f"{self.user} (id: {self.user.id}) has connected to Discord!")
+    def _is_init(self):
+        """
+        Check if required state is present to start quiz/get scores etc
+        """
+        return not (self.quiz is None or
+                    self.channel is None or
+                    self.quizmaster is None or
+                    self.players == dict())  # TODO: Include players here?
 
-    async def on_message(self, message):
-        if message.author == client.user:
+    async def _quizmaster_confirm(self, message):
+        """
+        Adds checkmark to message and waits for quizmaster reaction.
+        Returns the newly fetched message
+        """
+        await message.add_reaction("✅")
+
+        def check_confirm_players(reaction, user):
+            return reaction.message == message and str(reaction.emoji) == "✅" and user == self.quizmaster
+
+        await self.wait_for("reaction_add", check=check_confirm_players)
+        react_message = discord.utils.get(client.cached_messages, id=message.id)
+        assert isinstance(react_message, Message), "This should be a Message!"  # silence pyright
+        return react_message
+
+    async def _determine_players(self):
+        # Players react to this message
+        react_message = await self.channel.send(
+            "Hier mit individuellem Emoji reagieren, am Ende mit dem Haken bestätigen!")
+        react_message = await self._quizmaster_confirm(react_message)
+
+        # Get players from emojis
+        players = {}
+        for reaction in react_message.reactions:
+            if reaction.emoji == "✅":
+                continue
+
+            async for user in reaction.users():
+                if user == self.quizmaster:
+                    continue
+
+                players[reaction.emoji] = user  # TODO: key value which order?
+
+        return players
+
+    async def _wait_for_players(self):
+        def make_player_check(player):
+            return lambda message: message.author == player
+
+        await asyncio.wait(
+            [asyncio.create_task(self.wait_for("message", check=make_player_check(p))) for p in self.players.values()])
+
+    async def _message_players(self, message):
+        await asyncio.wait([asyncio.create_task(p.send(message)) for p in self.players.values()])
+
+    async def _ask_question(self, question):
+        question_text, answer, embed = question
+        await self._post_question_text(question_text, answer)
+        await self._post_embed(embed)
+        if isinstance(answer, tuple):
+            await self._post_answer_choices(answer)
+            return True
+
+    async def _post_question_text(self, question, answer):
+        await self.channel.send("**Frage:** " + question)
+
+        if not isinstance(answer, tuple):
+            await self._message_players("**Frage:** " + question)
+
+    async def _post_embed(self, embed):
+        if len(embed) < 2:
             return
+       
+        if embed[0] == "Image":
+            picture = discord.Embed()
+            picture.set_image(url=embed[1])
+            await self.channel.send(embed=picture)
+        elif embed[0] == "Video":
+            await self.channel.send(embed[1])
+        elif embed[0] == "Audio":
+            await self.channel.send("Audio not implemented!")
 
-        for trigger in self.triggers:
-            if trigger(message):
-                await self.triggers[trigger](message)
-                break
+    async def _post_answer_choices(self, choices):
+        """
+        Posts the answers in random order, returns the correct message
+        """
+        choices_rand = list(choices)
+        await self.channel.send("Antwortmöglichkeiten:")
+        while len(choices_rand) > 0:
+            choice = random.choice(choices_rand)
+            choices_rand.remove(choice)
+            await self.channel.send("- " + choice)
 
-        for matcher in self.matchers:
-            if self._match(matcher, message):
-                await self.matchers[matcher](message)
-                break
+    async def _post_answer(self, question):
+        question, answer, embed = question
+
+        if isinstance(answer, tuple):
+            return await self.channel.send("**Korrekte Antwort:** " + answer[0])
+
+        return await self.channel.send("**Korrekte Antwort:** " + answer)
+
+    async def _fetch_reactants(self, message):
+        turn_scores = list()
+        for reaction in message.reactions:
+            if reaction.emoji == "✅":
+                continue
+
+            async for user in reaction.users():
+                if user != self.quizmaster:
+                    continue
+
+                turn_scores.append(reaction.emoji)
+
+        return turn_scores
 
     # Commands -----------------------------------------------------------------------------------
 
@@ -105,28 +229,14 @@ class QuizClient(discord.Client):
         Quiz, reset - Gesetzte Werte zurücksetzen (zum neu Initialisieren)
         """
         await message.channel.send("Resetting...")
-
-        self.quiz = None
-        self.channel = None
-        self.quizmaster = None
-        self.players = dict()
-        self.scores = list()
-
+        self._reset()
         await message.channel.send("Finished.")
-
-    def is_init(self):
-        return not (self.quiz == None or
-                    self.channel == None or
-                    self.quizmaster == None or
-                    self.players == dict())
 
     async def init_quiz(self, message):
         """
         Quiz, init: [NAME] - Initialisiere ein neues Quiz.
         """
-
-        # Reset to enable multiple inits
-        await self.reset_quiz(message)
+        self._reset()  # Reset to enable multiple inits
 
         # Set self.channel
         if "quiz" not in message.channel.name.lower():
@@ -149,27 +259,7 @@ class QuizClient(discord.Client):
 
         # Set self.players
         await self.channel.send("Determining players:")
-        react_message = await self.channel.send(
-            "Hier mit individuellem Emoji reagieren, am Ende mit dem Haken bestätigen!")
-        await react_message.add_reaction("✅")
-
-        def check_confirm_players(reaction, user):
-            return reaction.message == react_message and str(reaction.emoji) == "✅" and user == self.quizmaster
-
-        await self.wait_for("reaction_add", check=check_confirm_players)
-        react_message = discord.utils.get(client.cached_messages, id=react_message.id)
-        assert isinstance(react_message, Message), "This should be a Message!"  # silence pyright
-
-        # Get players from emojis
-        for reaction in react_message.reactions:
-            if reaction.emoji == "✅":
-                continue
-
-            async for user in reaction.users():
-                if user == self.quizmaster:
-                    continue
-
-                self.players[reaction.emoji] = user  # TODO: key value which order?
+        self.players = await self._determine_players()
 
         # Send starting message
         await self.channel.send("Quiz will start in channel \"" + self.channel.name + "\"")
@@ -182,70 +272,39 @@ class QuizClient(discord.Client):
         """
         Quiz, run - Starte das Quiz
         """
-        if not self.is_init():
+        if not self._is_init():
             await message.channel.send("Vorher init du kek")
             return
 
         if not message.author == self.quizmaster:
-            await self.channel.send("Kein QuizMaster kein Quiz!")
+            await self.channel.send("Kein QuizMaster, kein Quiz!")
             return
 
-        for question, answer in self.quiz:
-
-            # post question to players
-            for player in self.players.values():
-                await player.send("**Frage:** " + question)
-
-            # post question to channel for confirmation
-            await self.channel.send("**Frage:** " + question)
-
-            # wait for answers from all players
-            for player in self.players.values():
-                def check_answers_given(message):
-                    return message.author == player
-
-                await self.wait_for("message", check=check_answers_given)
-
-            # wait for confirmation
-            cmsg = await self.channel.send("Alle Spieler haben geantwortet, fortfahren?")
-            await cmsg.add_reaction("✅")
-
-            def check_question_finished(reaction, user):
-                return reaction.message == cmsg and str(reaction.emoji) == "✅" and user == self.quizmaster
-
-            await self.wait_for("reaction_add", check=check_question_finished)
+        # Run questions
+        for question in self.quiz:
+            multiple_choice = await self._ask_question(question)
+            if not multiple_choice:
+                await self._wait_for_players()  # TODO: If this makes problems replace this with manual quizmaster emoji
+                cmsg = await self.channel.send("Alle Spieler haben geantwortet, fortfahren?")
+            else:
+                cmsg = await self.channel.send("Fortfahren?")
+            await self._quizmaster_confirm(cmsg)
             await self.channel.send("- " * 40)
 
             # Antworten
-            await self.channel.send("**Antworten:**")
-            for emoji, player in self.players.items():
-                await self.channel.send(
-                    str(emoji) + ": " + str((await player.dm_channel.history(limit=1).flatten())[0].content))
+            if not multiple_choice:
+                await self.channel.send("**Antworten:**")
+                for emoji, player in self.players.items():
+                    await self.channel.send(
+                        str(emoji) + ": " + str((await player.dm_channel.history(limit=1).flatten())[0].content))
+                    await asyncio.sleep(0.5)  # TODO: Keep this?
 
-            amsg = await self.channel.send("**Korrekte Antwort:** " + answer)
-            await amsg.add_reaction("✅")
+            # Correct answer and scores
+            amsg = await self._post_answer(question)
             for emoji, player in self.players.items():
                 await amsg.add_reaction(emoji)
-
-            # Set Points
-            def check_confirm_points(reaction, user):
-                return reaction.message == amsg and str(reaction.emoji) == "✅" and user == self.quizmaster
-
-            await self.wait_for("reaction_add", check=check_confirm_points)
-            amsg = discord.utils.get(client.cached_messages, id=amsg.id)
-            assert isinstance(amsg, Message), "This should be a Message!"  # silence pyright
-
-            turn_scores = list()
-            for reaction in amsg.reactions:
-                if reaction.emoji == "✅":
-                    continue
-
-                async for user in reaction.users():
-                    if user != self.quizmaster:
-                        continue
-
-                    turn_scores.append(reaction.emoji)
-
+            amsg = await self._quizmaster_confirm(amsg)
+            turn_scores = await self._fetch_reactants(amsg)
             self.scores.append(turn_scores)
 
             # Separators at the end
@@ -259,7 +318,7 @@ class QuizClient(discord.Client):
         """
         Quiz, scores - Zeigt den aktuellen Punktestand
         """
-        if not self.is_init():
+        if not self._is_init():
             await message.channel.send("Vorher init du kek")
             return
 
@@ -281,7 +340,7 @@ class QuizClient(discord.Client):
         """
         Quiz, players - Zeigt die Spielerliste
         """
-        if not self.is_init():
+        if not self._is_init():
             await message.channel.send("Vorher init du kek")
             return
 
