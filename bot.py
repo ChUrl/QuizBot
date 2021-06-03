@@ -173,7 +173,7 @@ class QuizClient(discord.Client):
     async def _post_embed(self, embed):
         if len(embed) < 2:
             return
-       
+
         if embed[0] == "Image":
             picture = discord.Embed()
             picture.set_image(url=embed[1])
@@ -297,7 +297,6 @@ class QuizClient(discord.Client):
                 for emoji, player in self.players.items():
                     await self.channel.send(
                         str(emoji) + ": " + str((await player.dm_channel.history(limit=1).flatten())[0].content))
-                    await asyncio.sleep(0.5)  # TODO: Keep this?
 
             # Correct answer and scores
             amsg = await self._post_answer(question)
