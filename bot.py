@@ -139,8 +139,8 @@ class QuizClient(discord.Client):
                 continue
 
             async for user in reaction.users():
-                if user == self.quizmaster:
-                    continue
+                # if user == self.quizmaster:
+                #     continue
 
                 players[reaction.emoji] = user  # TODO: key value which order?
 
