@@ -1,5 +1,3 @@
 python-dotenv
-rich
+py-cord
 matplotlib
-discord.py
-pynacl
