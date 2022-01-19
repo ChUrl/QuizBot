@@ -10,7 +10,9 @@ from dotenv import load_dotenv
 
 from quiz import Quiz
 
+# used to start the bot locally, for docker the variables have to be set when the container is run
 load_dotenv()
+
 TOKEN = os.getenv("DISCORD_TOKEN")
 GUILD = os.getenv("DISCORD_GUILD")  # Zocken mit Heidi
 
@@ -31,9 +33,6 @@ class QuizClient(discord.Client):
         self.players = dict()
         self.scores = list()
 
-        self.triggers = {}  # automatic actions
-        # Example: self.triggers[lambda m: "jeremy" in m.author.nick.lower()] = self.autoreact_to_jeremy
-
         self.matchers = {"hilfe$": self.help,
                          "init: .*": self.init_quiz,
                          "start$": self.run_quiz,
@@ -52,11 +51,6 @@ class QuizClient(discord.Client):
         if message.author == client.user:
             return
 
-        for trigger in self.triggers:
-            if trigger(message):
-                await self.triggers[trigger](message)
-                break
-
         for matcher in self.matchers:
             if self._match(matcher, message):
                 await self.matchers[matcher](message)
@@ -68,18 +62,12 @@ class QuizClient(discord.Client):
         """
         Generate help-string from docstrings of matchers and triggers
         """
-        docstrings_triggers = [
-            "  - " + func.__doc__.strip() for func in self.triggers.values()
-        ]
         docstrings_matchers = [
             "  - " + func.__doc__.strip() for func in self.matchers.values()
         ]
 
         response = 'Präfix: "' + self.prefix + '" (mit Leerzeichen)\n'
         response += "--------------------------------------------------\n"
-
-        response += "Passiert automatisch:\n"
-        response += "\n".join(docstrings_triggers)
 
         response += "\n\nEs gibt diese Befehle:\n"
         response += "\n".join(docstrings_matchers)
