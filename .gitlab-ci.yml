@@ -2,10 +2,6 @@
 # docker-in-docker: the runner uses docker from inside a docker container to execute the CI-jobs
 image: docker:20 # this image is globally used for all jobs and provides the docker toolset (but without an active daemon)
 
-stages:
-  - build
-  - push
-
 # services configure images that run during jobs linked to the (global) image
 services:
   - docker:dind # dind build on docker and starts up the dockerdaemon (docker itself doesn't do that), which is needed to call docker build etc.
@@ -17,7 +13,7 @@ before_script:
   - echo -n $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
 
 build-image:
-  stage: build
+  needs: [] # because the jobs are ordered in a DAG we don't need stages
   rules:
     - changes: # only run CI when these files have changed
       - "*.py"
@@ -42,14 +38,16 @@ build-image:
 
 # Here, the goal is to tag the "master" branch as "latest"
 push-latest:
+  needs:
+    - job: build-image
+  rules:
+    - changes: # only run CI when these files have changed
+      - "*.py"
+      - Dockerfile
   variables:
     # We are just playing with Docker here.
     # We do not need GitLab to clone the source code.
     GIT_STRATEGY: none
-  stage: push
-  needs:
-    - job: build-image
-      optional: true # Build doesn't always run, so make this optional
 
   script:
     # Because we have no guarantee that this job will be picked up by the same runner
