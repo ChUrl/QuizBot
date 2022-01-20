@@ -1,12 +1,14 @@
 docker-build:
+  # docker-in-docker: the runner uses docker from inside a docker container to execute the CI-jobs
+  image: docker:20 # provides the docker toolset (but without an active daemon)
+
   stage: build
 
   rules:
     - changes: # only run CI when these files have changed
       - "*.py"
-
-  # docker-in-docker: the runner uses docker from inside a docker container to execute the CI-jobs
-  image: docker:20 # provides the docker toolset (but without an active daemon)
+      - "Dockerfile"
+      - ".gitlab-ci.yml"
 
   # services configure images that run during jobs linked to the image (above)
   services:
@@ -14,7 +16,7 @@ docker-build:
 
   before_script:
     # docker login asks for the password to be passed through stdin for security
-    - docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
+    - docker login -u $CI_REGISTRY_USER -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
 
   script:
     # fetches the latest image from this projects registry to use as cache (not failing if image is not found)
