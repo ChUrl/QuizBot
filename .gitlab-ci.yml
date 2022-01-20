@@ -1,13 +1,14 @@
 # do not use "latest" here, if you want this to work in the future
-image: docker:20
+# docker-in-docker: the runner uses docker from inside a docker container to execute the CI-jobs
+image: docker:20 # this image is globally used for all jobs and provides the docker toolset (but without an active daemon)
 
 stages:
   - build
   - push
 
-# Use this if your GitLab runner does not use socket binding
+# services configure images that run during jobs linked to the (global) image
 services:
-  - docker:dind
+  - docker:dind # dind build on docker and starts up the dockerdaemon (docker itself doesn't do that), which is needed to call docker build etc.
 
 before_script:
   # docker login asks for the password to be passed through stdin for security
@@ -17,11 +18,14 @@ before_script:
 
 Build:
   stage: build
+  needs: []
+  rules:
+    - changes: # only run CI when these files have changed
+      - "*.py"
+      - Dockerfile
   script:
-    # fetches the latest image (not failing if image is not found)
+    # fetches the latest image from this projects registry to use as cache (not failing if image is not found)
     - docker pull $CI_REGISTRY_IMAGE:latest || true
-    # builds the project, passing proxy variables, using OCI labels
-    # notice the cache-from, which is going to use the image we just pulled locally
     # the built image is tagged locally with the commit SHA, and then pushed to
     # the GitLab registry
     - >
@@ -44,9 +48,7 @@ Push latest:
     # We do not need GitLab to clone the source code.
     GIT_STRATEGY: none
   stage: push
-  only:
-    # Only "master" should be tagged "latest"
-    - master
+  needs: ["Build"]
   script:
     # Because we have no guarantee that this job will be picked up by the same runner
     # that built the image in the previous step, we pull it again locally
@@ -55,18 +57,3 @@ Push latest:
     - docker tag $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA $CI_REGISTRY_IMAGE:latest
     # Annnd we push it.
     - docker push $CI_REGISTRY_IMAGE:latest
-
-# Finally, the goal here is to Docker tag any Git tag
-# GitLab will start a new pipeline everytime a Git tag is created, which is pretty awesome
-Push tag:
-  variables:
-    # Again, we do not need the source code here. Just playing with Docker.
-    GIT_STRATEGY: none
-  stage: push
-  only:
-    # We want this job to be run on tags only.
-    - tags
-  script:
-    - docker pull $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
-    - docker tag $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME
-    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_REF_NAME
