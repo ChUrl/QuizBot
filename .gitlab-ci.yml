@@ -1,32 +1,27 @@
-# do not use "latest" here, if you want this to work in the future
-# docker-in-docker: the runner uses docker from inside a docker container to execute the CI-jobs
-image: docker:20 # this image is globally used for all jobs and provides the docker toolset (but without an active daemon)
 
-# services configure images that run during jobs linked to the (global) image
-services:
-  - docker:dind # dind build on docker and starts up the dockerdaemon (docker itself doesn't do that), which is needed to call docker build etc.
 
-stages:
-  - build
-  - push
-
-before_script:
-  # docker login asks for the password to be passed through stdin for security
-  # we use $CI_REGISTRY_PASSWORD here which is a special variable provided by GitLab
-  # https://docs.gitlab.com/ce/ci/variables/predefined_variables.html
-  - echo -n $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
-
-build-image:
+docker-build:
   stage: build
+
   rules:
     - changes: # only run CI when these files have changed
       - "*.py"
-      - Dockerfile
+
+  # docker-in-docker: the runner uses docker from inside a docker container to execute the CI-jobs
+  image: docker:20 # provides the docker toolset (but without an active daemon)
+
+  # services configure images that run during jobs linked to the image (above)
+  services:
+  - docker:dind # dind build on docker and starts up the dockerdaemon (docker itself doesn't do that), which is needed to call docker build etc.
+
+  before_script:
+    # docker login asks for the password to be passed through stdin for security
+    - docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
+
   script:
     # fetches the latest image from this projects registry to use as cache (not failing if image is not found)
     - docker pull $CI_REGISTRY_IMAGE:latest || true
-    # the built image is tagged locally with the commit SHA, and then pushed to
-    # the GitLab registry
+    # build
     - >
       docker build
       --pull
@@ -38,21 +33,6 @@ build-image:
       --label "org.opencontainers.image.version=$CI_COMMIT_REF_NAME"
       --tag $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
       .
-    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
-
-# Here, the goal is to tag the "master" branch as "latest"
-push-latest:
-  stage: push
-  variables:
-    # We are just playing with Docker here.
-    # We do not need GitLab to clone the source code.
-    GIT_STRATEGY: none
-
-  script:
-    # Because we have no guarantee that this job will be picked up by the same runner
-    # that built the image in the previous step, we pull it again locally
-    - docker pull $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
-    # Then we tag it "latest"
+    # tag and push
     - docker tag $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA $CI_REGISTRY_IMAGE:latest
-    # Annnd we push it.
     - docker push $CI_REGISTRY_IMAGE:latest
