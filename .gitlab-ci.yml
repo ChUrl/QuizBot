@@ -6,6 +6,10 @@ image: docker:20 # this image is globally used for all jobs and provides the doc
 services:
   - docker:dind # dind build on docker and starts up the dockerdaemon (docker itself doesn't do that), which is needed to call docker build etc.
 
+stages:
+  - build
+  - push
+
 before_script:
   # docker login asks for the password to be passed through stdin for security
   # we use $CI_REGISTRY_PASSWORD here which is a special variable provided by GitLab
@@ -13,7 +17,7 @@ before_script:
   - echo -n $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
 
 build-image:
-  needs: [] # because the jobs are ordered in a DAG we don't need stages
+  stage: build
   rules:
     - changes: # only run CI when these files have changed
       - "*.py"
@@ -38,12 +42,7 @@ build-image:
 
 # Here, the goal is to tag the "master" branch as "latest"
 push-latest:
-  needs:
-    - job: build-image
-  rules:
-    - changes: # only run CI when these files have changed
-      - "*.py"
-      - Dockerfile
+  stage: push
   variables:
     # We are just playing with Docker here.
     # We do not need GitLab to clone the source code.
