@@ -16,7 +16,7 @@ before_script:
   # https://docs.gitlab.com/ce/ci/variables/predefined_variables.html
   - echo -n $CI_REGISTRY_PASSWORD | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
 
-Build:
+build-image:
   stage: build
   rules:
     - changes: # only run CI when these files have changed
@@ -41,13 +41,16 @@ Build:
     - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
 
 # Here, the goal is to tag the "master" branch as "latest"
-Push latest:
+push-latest:
   variables:
     # We are just playing with Docker here.
     # We do not need GitLab to clone the source code.
     GIT_STRATEGY: none
   stage: push
-  needs: ["Build"]
+  needs:
+    - job: build-image
+      optional: true # Build doesn't always run, so make this optional
+
   script:
     # Because we have no guarantee that this job will be picked up by the same runner
     # that built the image in the previous step, we pull it again locally
