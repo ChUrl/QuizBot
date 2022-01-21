@@ -4,7 +4,6 @@ workflow: # for entire pipeline
       changes: # ...and when these files have changed
       - "*.py"
       - "Dockerfile"
-      - ".gitlab-ci.yml"
 
 docker-build:
   stage: build
