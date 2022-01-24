@@ -1,6 +1,6 @@
 #!/bin/sh
 
-git pull
+git -C QuizBot pull
 
 docker pull registry.gitlab.com/churl/quizbot
 docker container rm -f quizbot
